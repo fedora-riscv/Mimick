@@ -2,9 +2,18 @@
 # Redistribution and use of this file is allowed according to the terms of the MIT license.
 # For details see the LICENSE file distributed with Mimick.
 
-cmake_minimum_required (VERSION 2.8)
+cmake_minimum_required (VERSION 2.8.12)
 
-project (Mimick C)
+project (Mimick C CXX)
+# Default to C++11
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 11)
+endif()
+
+if(POLICY CMP0042)
+  # Allow @rpath in target's install name
+  cmake_policy(SET CMP0042 NEW)
+endif()
 
 include (CheckSymbolExists)
 include (GNUInstallDirs)
@@ -14,7 +23,7 @@ set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${MODULE_DIR})
 
 set (I386 "^(i[3-7]|x)86$")
 set (AMD64 "^(x86_|x86-|AMD|amd|x)64$")
-set (ARM32 "^(arm|ARM|A)(32)?$")
+set (ARM32 "^(arm|ARM|A)(32|v7l|v6l)?$")
 set (ARM64 "^(arm|ARM|A|aarch|AARCH)64$")
 
 if (CMAKE_GENERATOR_PLATFORM)
@@ -61,11 +70,6 @@ else ()
       set (MMK_ABI "win")
     else ()
       set (MMK_ABI "systemv")
-      if (CMAKE_C_COMPILER_ID MATCHES "GNU")
-        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fcf-protection")
-        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-zibt -Wl,-zshstk")
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-zibt -Wl,-zshstk")
-      endif ()
     endif ()
     set (MMK_ARCH "x86_64")
     set (MMK_BITS 64)
@@ -80,12 +84,14 @@ else ()
     set (MMK_ABI "aarch64")
     set (MMK_BITS 64)
     set (MMK_ARCH_ARM64 1)
+  elseif (_ARCH MATCHES "riscv64")
+    set (MMK_ARCH "rv64")
+    set (MMK_ABI "rv64")
+    set (MMK_BITS 64)
+    set (MMK_ARCH_RV64 1)
   else ()
     message (FATAL_ERROR "Architecture '${_ARCH}' is not supported.")
   endif ()
-  if (APPLE)
-    set (MMK_MANGLING "leading-underscore")
-  endif()
   set (ASM_EXTENSION ".S")
 endif ()
 
@@ -165,6 +171,7 @@ include_directories(include src "${PROJECT_BINARY_DIR}/src")
 add_subdirectory (src)
 
 add_library (mimick STATIC ${SOURCE_FILES})
+target_include_directories(mimick INTERFACE $<INSTALL_INTERFACE:include>)
 
 foreach (F ${INTERFACE_FILES})
   get_filename_component(DEST "${F}" PATH)
@@ -172,6 +179,7 @@ foreach (F ${INTERFACE_FILES})
 endforeach ()
 
 install(TARGETS mimick
+  EXPORT mimick-targets
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
@@ -204,3 +212,11 @@ endfunction ()
 enable_testing ()
 add_subdirectory (test)
 add_subdirectory (sample)
+
+install(EXPORT mimick-targets DESTINATION lib/cmake/mimick)
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+	"mimickConfig.cmake.in" "${CMAKE_CURRENT_BINARY_DIR}/mimickConfig.cmake"
+	INSTALL_DESTINATION "lib/cmake/mimick"
+)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mimickConfig.cmake" DESTINATION "lib/cmake/mimick")
